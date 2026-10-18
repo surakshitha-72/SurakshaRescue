@@ -11,7 +11,13 @@ import {
   ModelVersion,
   DataSourceStatus,
   AuditLog,
-  AlertNotification
+  AlertNotification,
+  TrustedKnowledgeSource,
+  KnowledgeChunk,
+  RagRetrievalResult,
+  EnvironmentalTelemetry,
+  PredictiveForecastResult,
+  RagWarningAdvisory
 } from '../types/disaster';
 import {
   INITIAL_HABITATIONS,
@@ -43,6 +49,7 @@ export interface StateResponse {
   dataSources: DataSourceStatus[];
   auditLogs: AuditLog[];
   priorities: PriorityRanking[];
+  ragAdvisory?: RagWarningAdvisory;
 }
 
 export const ApiClient = {
@@ -314,5 +321,140 @@ export const ApiClient = {
     } catch (e: any) {
       return { success: false, message: e.message || 'Override error' };
     }
+  },
+
+  // ==========================================
+  // RAG & AI PREDICTION CLIENT METHODS
+  // ==========================================
+
+  async getTrustedSources(): Promise<TrustedKnowledgeSource[]> {
+    try {
+      const res = await fetch('/api/rag/sources');
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error fetching trusted sources:', e);
+    }
+    return [];
+  },
+
+  async saveTrustedSource(source: Partial<TrustedKnowledgeSource>): Promise<TrustedKnowledgeSource | null> {
+    try {
+      const res = await fetch('/api/rag/sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(source)
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error saving trusted source:', e);
+    }
+    return null;
+  },
+
+  async deleteTrustedSource(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/rag/sources/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      return Boolean(data.success);
+    } catch {
+      return false;
+    }
+  },
+
+  async syncKnowledgeBase(sourceId?: string, customContent?: string): Promise<{ success: boolean; totalChunksAdded?: number; chunksAdded?: number; error?: string }> {
+    try {
+      const res = await fetch('/api/rag/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId, customContent })
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  async getKnowledgeChunks(): Promise<KnowledgeChunk[]> {
+    try {
+      const res = await fetch('/api/rag/chunks');
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error fetching chunks:', e);
+    }
+    return [];
+  },
+
+  async retrieveRagContext(query: string, topK = 4): Promise<RagRetrievalResult[]> {
+    try {
+      const res = await fetch('/api/rag/retrieve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, topK })
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error retrieving RAG context:', e);
+    }
+    return [];
+  },
+
+  async generateRagBriefing(query?: string): Promise<{ briefingText: string; citedSources: any[] }> {
+    try {
+      const res = await fetch('/api/rag/briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error generating RAG briefing:', e);
+    }
+    return {
+      briefingText: 'Operational briefing based on trusted flood warning authorities (CWC, IMD, NDMA).',
+      citedSources: []
+    };
+  },
+
+  async generatePredictiveForecast(envInput?: Partial<EnvironmentalTelemetry>): Promise<PredictiveForecastResult | null> {
+    try {
+      const res = await fetch('/api/prediction/forecast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(envInput || {})
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error generating predictive forecast:', e);
+    }
+    return null;
+  },
+
+  async getRagAdvisory(): Promise<RagWarningAdvisory | null> {
+    try {
+      const res = await fetch('/api/rag/advisory');
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error fetching RAG advisory:', e);
+    }
+    return null;
+  },
+
+  async getHazardAwareInboundRoutes(habName: string, teamLocation?: { lat: number; lng: number }): Promise<{
+    routes: any[];
+    blockedCorridors: string[];
+    safeBypassWaypoint: { lat: number; lng: number };
+    ragAdvisoryNote: string;
+  } | null> {
+    try {
+      const res = await fetch('/api/routes/hazard-aware-inbound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ habName, teamLocation })
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn('Error fetching hazard aware routes:', e);
+    }
+    return null;
   }
 };

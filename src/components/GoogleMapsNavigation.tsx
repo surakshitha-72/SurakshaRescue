@@ -105,11 +105,19 @@ export const GoogleMapsNavigation: React.FC<GoogleMapsNavigationProps> = ({
     }
   ];
 
+  // Official Google Maps API Key from environment
+  const googleMapsApiKey =
+    (import.meta.env?.VITE_GOOGLE_MAPS_API_KEY as string) ||
+    ((typeof process !== 'undefined' && process.env?.REACT_APP_GOOGLE_MAPS_API_KEY) as string) ||
+    '';
+
   // Official Universal Google Maps Navigation URL with turn-by-turn driving action
   const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoint.lat},${waypoint.lng}&travelmode=driving&dir_action=navigate`;
 
-  // Standard Google Maps directions embed URL (works natively in iframe)
-  const embedGoogleMapsUrl = `https://maps.google.com/maps?saddr=${origin.lat},${origin.lng}&daddr=${destination.lat},${destination.lng}&hl=en&z=13&output=embed`;
+  // Standard Google Maps directions embed URL (uses official Maps Embed API if key is present, with graceful fallback)
+  const embedGoogleMapsUrl = googleMapsApiKey
+    ? `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(googleMapsApiKey)}&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoint.lat},${waypoint.lng}&mode=driving`
+    : `https://maps.google.com/maps?saddr=${origin.lat},${origin.lng}&daddr=${destination.lat},${destination.lng}&hl=en&z=13&output=embed`;
 
   // Advance driver along the journey during active navigation simulation
   useEffect(() => {

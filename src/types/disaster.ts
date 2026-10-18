@@ -69,7 +69,7 @@ export interface RiskZone {
   id: string;
   name: string;
   hazardType: HazardType;
-  riskLevel: 'Low' | 'Medium' | 'High' | 'Critical'; // Green, Yellow, Red/Critical
+  riskLevel: 'Low' | 'Medium' | 'High' | 'Critical'; // Green, Yellow/Orange, Red/Critical
   polygon: [number, number][];
   population: number;
   vulnerablePopulation: number;
@@ -77,6 +77,9 @@ export interface RiskZone {
   severity: string;
   recommendedAction: string;
   nearbyShelterIds: string[];
+  ragRiskScore?: number;
+  inundationEtaWindow?: string;
+  activeBreach?: boolean;
 }
 
 export interface Shelter {
@@ -196,7 +199,7 @@ export interface DisasterRegion {
 
 export interface DisasterAlert {
   id: string;
-  source: 'Government Authority' | 'Weather Agency (IMD)' | 'River Sensor Network' | 'Satellite Analysis (ISRO)' | 'Community Report' | 'NGO' | 'Rescue Team';
+  source: 'Government Authority' | 'Weather Agency (IMD)' | 'River Sensor Network' | 'Satellite Analysis (ISRO)' | 'Community Report' | 'NGO' | 'Rescue Team' | string;
   locationName: string;
   lat: number;
   lng: number;
@@ -211,6 +214,9 @@ export interface DisasterAlert {
     recommendedAction: string;
     confidenceScore: number;
   };
+  isRagGenerated?: boolean;
+  ragSourceUrl?: string;
+  ragTrustScore?: number;
 }
 
 export interface AlertNotification {
@@ -301,4 +307,90 @@ export interface PriorityRanking {
   recommendedTeamName?: string;
   recommendedAction: string;
   aiExplanation: string[];
+  ragRiskScore?: number;
+  ragCitedBulletin?: string;
+  ragSourceUrl?: string;
+  inundationWindow?: string;
+  isRagBoosted?: boolean;
 }
+
+export interface RagWarningAdvisory {
+  id: string;
+  agencyName: string;
+  category: string;
+  trustScore: number;
+  headline: string;
+  bulletinExcerpt: string;
+  keyMetrics: {
+    surgeLevel: string;
+    dischargeCusecs: string;
+    rainfallMm: string;
+    inundationEta: string;
+  };
+  officialDirective: string;
+  sourceUrl: string;
+  timestamp: string;
+  threatenedZones: string[];
+  suggestedBroadcastMessage: string;
+}
+
+export interface TrustedKnowledgeSource {
+  id: string;
+  name: string;
+  url: string;
+  trustScore: number; // 1 to 10
+  category: 'Flood Alert' | 'Embankment Report' | 'Weather Warning' | 'Hydrological Telemetry' | 'Seismic Hazard';
+  feedType: 'Web' | 'RSS' | 'API' | 'Official Bulletin';
+  isActive: boolean;
+  lastIngestedAt?: string;
+  chunksCount?: number;
+  description?: string;
+}
+
+export interface EnvironmentalTelemetry {
+  rainfallMm: number;
+  flowVelocityMs: number;
+  upstreamReleaseCusecs: number;
+  soilSaturationPct: number;
+  windSpeedKmh: number;
+}
+
+export interface KnowledgeChunk {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  sourceUrl: string;
+  sourceTrustScore: number;
+  timestamp: string;
+  category: string;
+  title: string;
+  text: string;
+  embedding?: number[];
+  environmentalVariables?: Partial<EnvironmentalTelemetry>;
+}
+
+export interface RagRetrievalResult {
+  chunk: KnowledgeChunk;
+  semanticScore: number;
+  normalizedTrustScore: number;
+  recencyScore: number;
+  combinedScore: number;
+}
+
+export interface PredictiveForecastResult {
+  riskScore: number; // 0-100%
+  alertLevel: 'Level 1 Normal' | 'Level 2 Watch' | 'Level 3 Warning' | 'Level 4 Critical';
+  inundationWindow: string; // e.g., "T - 45 Minutes Remaining"
+  impactEtaTimestamp: string;
+  recommendedActions: string[];
+  rationale: string;
+  citedSources: {
+    name: string;
+    url: string;
+    trustScore: number;
+    snippet: string;
+  }[];
+  computedEnvironmentalVariables: EnvironmentalTelemetry;
+  generatedAt: string;
+}
+

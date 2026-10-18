@@ -37,6 +37,7 @@ import {
   AuditLog,
   ShelterReservation
 } from './src/types/disaster';
+import { ragKnowledgeEngine } from './src/services/ragPredictionEngine';
 
 // Initialize lazy Gemini client
 let genAIClient: GoogleGenAI | null = null;
@@ -122,9 +123,26 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Complete State Snapshot
-  app.get('/api/state', (req, res) => {
-    const priorities = calculateRescuePriorities(state.habitations, state.shelters, state.teams);
+  // Complete State Snapshot (Dynamic RAG & Prediction Engine Integration)
+  app.get('/api/state', async (req, res) => {
+    // 1. Dynamic Region Urgency & Priority Ranking via RAG
+    const priorities = await ragKnowledgeEngine.calculateRagEnhancedPriorities(state.habitations, state.shelters, state.teams);
+
+    // 2. Dynamic Tactical Geospatial Risk Zones based on RAG risk scores
+    const dynamicZones = ragKnowledgeEngine.getDynamicRiskZones();
+    state.riskZones = dynamicZones;
+
+    // 3. Automated RAG-Driven System Alerts
+    const ragAlerts = ragKnowledgeEngine.generateRagAlerts();
+    for (const a of ragAlerts) {
+      if (!state.alerts.some(existing => existing.id === a.id)) {
+        state.alerts.unshift(a);
+      }
+    }
+
+    // 4. Official RAG Warning Advisory Banner Data
+    const ragAdvisory = ragKnowledgeEngine.getLatestRagWarningAdvisory();
+
     res.json({
       habitations: state.habitations,
       shelters: state.shelters,
@@ -138,7 +156,8 @@ async function startServer() {
       modelVersions: state.modelVersions,
       dataSources: state.dataSources,
       auditLogs: state.auditLogs,
-      priorities
+      priorities,
+      ragAdvisory
     });
   });
 
@@ -326,14 +345,14 @@ async function startServer() {
     res.json(prediction);
   });
 
-  // 4. Vulnerable Habitations & Rescue Priorities
-  app.get('/api/habitations/vulnerable', (req, res) => {
-    const ranked = calculateRescuePriorities(state.habitations, state.shelters, state.teams);
+  // 4. Vulnerable Habitations & Rescue Priorities (Dynamic RAG Integration)
+  app.get('/api/habitations/vulnerable', async (req, res) => {
+    const ranked = await ragKnowledgeEngine.calculateRagEnhancedPriorities(state.habitations, state.shelters, state.teams);
     res.json(ranked);
   });
 
-  app.get('/api/rescue-priorities', (req, res) => {
-    const ranked = calculateRescuePriorities(state.habitations, state.shelters, state.teams);
+  app.get('/api/rescue-priorities', async (req, res) => {
+    const ranked = await ragKnowledgeEngine.calculateRagEnhancedPriorities(state.habitations, state.shelters, state.teams);
     res.json(ranked);
   });
 
@@ -700,6 +719,117 @@ Return a short operational threat assessment and 3 concise immediate directives 
     );
 
     res.json({ success: true, message: 'AI override recorded in audit logs with justification.' });
+  });
+
+  // ==========================================
+  // RAG & AI DISASTER PREDICTION APIS
+  // ==========================================
+
+  // 1. Dynamic Trusted Knowledge Sources
+  app.get('/api/rag/sources', (req, res) => {
+    res.json(ragKnowledgeEngine.getSources());
+  });
+
+  app.post('/api/rag/sources', (req, res) => {
+    const { name, url, trustScore, category, feedType, description } = req.body;
+    if (!name || !url) {
+      return res.status(400).json({ error: 'Name and URL are required.' });
+    }
+    const source = ragKnowledgeEngine.addOrUpdateSource({
+      name,
+      url,
+      trustScore: Number(trustScore) || 10,
+      category: category || 'Flood Alert',
+      feedType: feedType || 'Web',
+      description
+    });
+    state.logAudit('KNOWLEDGE_UPDATE', `Admin added/updated trusted disaster source: ${source.name} (${source.url}) with Trust Score ${source.trustScore}/10.`);
+    res.json(source);
+  });
+
+  app.delete('/api/rag/sources/:id', (req, res) => {
+    const { id } = req.params;
+    const deleted = ragKnowledgeEngine.deleteSource(id);
+    if (deleted) {
+      state.logAudit('KNOWLEDGE_UPDATE', `Admin removed trusted disaster knowledge source: ID ${id}`);
+    }
+    res.json({ success: deleted });
+  });
+
+  // Ingestion Worker (Trigger re-sync)
+  app.post('/api/rag/sync', async (req, res) => {
+    const { sourceId, customContent } = req.body;
+    try {
+      if (sourceId) {
+        const result = await ragKnowledgeEngine.ingestFromSource(sourceId, customContent);
+        state.logAudit('KNOWLEDGE_UPDATE', `RAG Ingestion worker processed source: ${result.source.name}, added ${result.chunksAdded} embedded chunks.`);
+        return res.json({ success: true, ...result });
+      }
+
+      // Sync all active sources
+      const sources = ragKnowledgeEngine.getSources().filter(s => s.isActive);
+      let totalAdded = 0;
+      for (const s of sources) {
+        const resSync = await ragKnowledgeEngine.ingestFromSource(s.id);
+        totalAdded += resSync.chunksAdded;
+      }
+      state.logAudit('KNOWLEDGE_UPDATE', `RAG Ingestion worker synchronized ${sources.length} trusted sources, generating ${totalAdded} vector-embedded chunks.`);
+      res.json({ success: true, sourcesSynced: sources.length, totalChunksAdded: totalAdded });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Get Ingested Chunks
+  app.get('/api/rag/chunks', (req, res) => {
+    res.json(ragKnowledgeEngine.getChunks());
+  });
+
+  // 2. Prioritized RAG Retrieval Engine (Hybrid Ranking)
+  app.post('/api/rag/retrieve', async (req, res) => {
+    const { query, topK } = req.body;
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required for RAG retrieval.' });
+    }
+    const results = await ragKnowledgeEngine.retrieveRelevantContext(query, Number(topK) || 4);
+    res.json(results);
+  });
+
+  // Generate RAG Situation Briefing with Cited Sources
+  app.post('/api/rag/briefing', async (req, res) => {
+    const { query } = req.body;
+    const briefing = await ragKnowledgeEngine.generateSituationBriefing(query || 'Current Kosi basin breach and evacuation directives');
+    res.json(briefing);
+  });
+
+  // 3. AI Environmental Predictive Engine
+  app.post('/api/prediction/forecast', async (req, res) => {
+    const { rainfallMm, flowVelocityMs, upstreamReleaseCusecs, soilSaturationPct, windSpeedKmh } = req.body;
+    const forecast = await ragKnowledgeEngine.generatePredictiveForecast({
+      rainfallMm: rainfallMm !== undefined ? Number(rainfallMm) : undefined,
+      flowVelocityMs: flowVelocityMs !== undefined ? Number(flowVelocityMs) : undefined,
+      upstreamReleaseCusecs: upstreamReleaseCusecs !== undefined ? Number(upstreamReleaseCusecs) : undefined,
+      soilSaturationPct: soilSaturationPct !== undefined ? Number(soilSaturationPct) : undefined,
+      windSpeedKmh: windSpeedKmh !== undefined ? Number(windSpeedKmh) : undefined
+    });
+    state.logAudit('PREDICTION', `AI Environmental Predictive Engine generated ${forecast.alertLevel} forecast (Risk: ${forecast.riskScore}%). Inundation Window: ${forecast.inundationWindow}.`);
+    res.json(forecast);
+  });
+
+  // 4. Official RAG Warning Advisory Banner Data
+  app.get('/api/rag/advisory', (req, res) => {
+    const advisory = ragKnowledgeEngine.getLatestRagWarningAdvisory();
+    res.json(advisory);
+  });
+
+  // 5. Hazard-Aware Dynamic Route Recalculation via RAG
+  app.post('/api/routes/hazard-aware-inbound', (req, res) => {
+    const { habName, teamLocation } = req.body;
+    const routingResult = ragKnowledgeEngine.getHazardAwareCandidateRoutes(
+      habName || 'Affected Habitation',
+      teamLocation
+    );
+    res.json(routingResult);
   });
 
   // Vite middleware in development

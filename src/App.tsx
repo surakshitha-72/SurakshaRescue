@@ -1,25 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
-import { PipelineProgressBar, PIPELINE_STEPS } from './components/PipelineProgressBar';
 import { CommandCenterView } from './views/CommandCenterView';
-import { RescueWorkflowView } from './views/RescueWorkflowView';
-import { LiveMapView } from './views/LiveMapView';
-import { DisastersHubView } from './views/DisastersHubView';
-import { HistoryHubView } from './views/HistoryHubView';
-import { HazardPredictionView } from './views/HazardPredictionView';
-import { RedZonesView } from './views/RedZonesView';
-import { VulnerabilityView } from './views/VulnerabilityView';
-import { RescuePrioritizationView } from './views/RescuePrioritizationView';
-import { SheltersCapacityView } from './views/SheltersCapacityView';
-import { RescueTeamsView } from './views/RescueTeamsView';
-import { RouteSafetyView } from './views/RouteSafetyView';
-import { AlertsView } from './views/AlertsView';
-import { DataSourcesView } from './views/DataSourcesView';
-import { KnowledgeBaseView } from './views/KnowledgeBaseView';
-import { ContinuousLearningView } from './views/ContinuousLearningView';
-import { AuditLogsView } from './views/AuditLogsView';
 import { DisasterSimulationModal } from './components/DisasterSimulationModal';
 import { AIExplanationModal } from './components/AIExplanationModal';
+import { AdminKnowledgeSourcesModal } from './components/AdminKnowledgeSourcesModal';
 import { ApiClient, StateResponse } from './services/apiClient';
 import { UserRole, Habitation, PriorityRanking } from './types/disaster';
 import {
@@ -41,7 +25,7 @@ import { calculateRescuePriorities } from './services/hazardEngine';
 export default function App() {
   const [currentTab, setCurrentTab] = useState<string>('command-center');
   const [userRole, setUserRole] = useState<UserRole>('AUTHORITY');
-  const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
+  const [resetCount, setResetCount] = useState<number>(0);
 
   // App State
   const [state, setState] = useState<StateResponse>({
@@ -63,6 +47,7 @@ export default function App() {
   // Modal states
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [aiExplanationHabId, setAiExplanationHabId] = useState<string | null>(null);
+  const [isRagModalOpen, setIsRagModalOpen] = useState<boolean>(false);
 
   // Load initial state from server API
   const refreshState = async () => {
@@ -77,13 +62,8 @@ export default function App() {
   const handleResetState = async () => {
     await ApiClient.resetState();
     await refreshState();
-    setCurrentStepIndex(0);
+    setResetCount(prev => prev + 1);
     setCurrentTab('command-center');
-  };
-
-  const handleSelectStep = (index: number, tabKey: string) => {
-    setCurrentStepIndex(index);
-    setCurrentTab(tabKey);
   };
 
   const handleTriggerEvacuation = async (habId: string) => {
@@ -99,8 +79,6 @@ export default function App() {
     });
 
     await refreshState();
-    // Switch to Rescue Mode to guide evacuation
-    setCurrentTab('rescue');
   };
 
   const selectedExplanationHabitation: Habitation | null =
@@ -108,216 +86,71 @@ export default function App() {
   const selectedPriorityItem: PriorityRanking | undefined =
     state.priorities.find(p => p.habitationId === aiExplanationHabId);
 
+  // Consolidated Navigation: Sync tabs to workflow steps (Requirement 1 & 2)
+  const initialWorkflowStage: 'welcome' | 1 | 2 | 3 =
+    currentTab === 'map' || currentTab === 'rescue'
+      ? 2
+      : currentTab === 'centres' || currentTab === 'shelters'
+      ? 3
+      : 'welcome';
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-500 selection:text-white">
-      {/* 1. Header & Dual Navigation (Desktop & Mobile) */}
+    <div className="min-h-screen bg-[#011627] text-slate-100 flex flex-col font-sans selection:bg-sky-400 selection:text-slate-950">
+      {/* 1. Header & Navigation */}
       <Navbar
         currentTab={currentTab}
-        onSelectTab={(tab) => {
-          setCurrentTab(tab);
-          const foundIdx = PIPELINE_STEPS.findIndex(s => s.tabKey === tab);
-          if (foundIdx !== -1) setCurrentStepIndex(foundIdx);
-        }}
+        onSelectTab={(tab) => setCurrentTab(tab)}
         userRole={userRole}
         onChangeRole={setUserRole}
         onRunSimulation={() => setIsSimulating(true)}
         onResetState={handleResetState}
         isSimulating={isSimulating}
         alertCount={state.alerts.length}
+        onOpenRagKnowledgeModal={() => setIsRagModalOpen(true)}
       />
 
-      {/* 2. Persistent 10-Step Operational Workflow Ribbon */}
-      <PipelineProgressBar
-        currentStepIndex={currentStepIndex}
-        onSelectStep={handleSelectStep}
-      />
-
-      {/* 3. Main Operational View Area (with bottom padding for mobile bar) */}
-      <main className="flex-1 overflow-x-hidden pb-20 md:pb-6">
-        {/* Core Dashboard */}
-        {currentTab === 'command-center' && (
-          <CommandCenterView
-            habitations={state.habitations}
-            shelters={state.shelters}
-            teams={state.teams}
-            riskZones={state.riskZones}
-            routeSegments={state.routeSegments}
-            routes={state.routes}
-            priorities={state.priorities}
-            alerts={state.alerts}
-            onSelectHabitation={(id) => {}}
-            onSelectShelter={(id) => {
-              setCurrentTab('centres');
-            }}
-            onTriggerEvacuation={handleTriggerEvacuation}
-            onRequestAIExplanation={(id) => setAiExplanationHabId(id)}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-          />
-        )}
-
-        {/* Live India Map View */}
-        {currentTab === 'map' && (
-          <LiveMapView
-            habitations={state.habitations}
-            shelters={state.shelters}
-            teams={state.teams}
-            riskZones={state.riskZones}
-            routeSegments={state.routeSegments}
-            routes={state.routes}
-            onTriggerEvacuation={handleTriggerEvacuation}
-            onRequestAIExplanation={(id) => setAiExplanationHabId(id)}
-            onLaunchRescueForHabitation={(id) => {
-              setCurrentTab('rescue');
-            }}
-          />
-        )}
-
-        {/* Primary Rescue Workflow & Rescue Mode View */}
-        {currentTab === 'rescue' && (
-          <RescueWorkflowView
-            habitations={state.habitations}
-            shelters={state.shelters}
-            teams={state.teams}
-            riskZones={state.riskZones}
-            routeSegments={state.routeSegments}
-            routes={state.routes}
-            onRefreshState={refreshState}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-          />
-        )}
-
-        {/* Disasters Hub */}
-        {currentTab === 'disasters' && (
-          <DisastersHubView
-            riskZones={state.riskZones}
-            habitations={state.habitations}
-            shelters={state.shelters}
-            onRefreshState={refreshState}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-            onTriggerEvacuation={handleTriggerEvacuation}
-          />
-        )}
-
-        {/* Relocation Centres */}
-        {(currentTab === 'centres' || currentTab === 'shelters') && (
-          <SheltersCapacityView
-            shelters={state.shelters}
-            teams={state.teams}
-            habitations={state.habitations}
-            onRefreshState={refreshState}
-          />
-        )}
-
-        {/* Alerts & Notifications */}
-        {currentTab === 'alerts' && (
-          <AlertsView
-            alerts={state.alerts}
-            notifications={state.notifications}
-            habitations={state.habitations}
-            onRefreshState={refreshState}
-          />
-        )}
-
-        {/* History Hub */}
-        {currentTab === 'history' && (
-          <HistoryHubView
-            knowledgeBase={state.knowledgeBase}
-            modelVersions={state.modelVersions}
-            dataSources={state.dataSources}
-            auditLogs={state.auditLogs}
-            onRefreshState={refreshState}
-          />
-        )}
-
-        {/* Legacy / Direct Module Views (Preserving 100% of existing functionality) */}
-        {currentTab === 'hazard-prediction' && (
-          <HazardPredictionView
-            onApplyPredictionToMap={(pred) => {
-              refreshState();
-              setCurrentTab('map');
-            }}
-          />
-        )}
-
-        {currentTab === 'red-zones' && (
-          <RedZonesView
-            riskZones={state.riskZones}
-            shelters={state.shelters}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-          />
-        )}
-
-        {currentTab === 'vulnerability' && (
-          <VulnerabilityView
-            habitations={state.habitations}
-            onSelectHabitation={(id) => {}}
-            onTriggerEvacuation={handleTriggerEvacuation}
-          />
-        )}
-
-        {currentTab === 'rescue-priorities' && (
-          <RescuePrioritizationView
-            priorities={state.priorities}
-            onTriggerEvacuation={handleTriggerEvacuation}
-            onRequestAIExplanation={(id) => setAiExplanationHabId(id)}
-          />
-        )}
-
-        {currentTab === 'rescue-teams' && (
-          <RescueTeamsView
-            teams={state.teams}
-            habitations={state.habitations}
-            shelters={state.shelters}
-          />
-        )}
-
-        {currentTab === 'route-safety' && (
-          <RouteSafetyView
-            routeSegments={state.routeSegments}
-            routes={state.routes}
-            onRefreshState={refreshState}
-          />
-        )}
-
-        {currentTab === 'data-sources' && (
-          <DataSourcesView
-            dataSources={state.dataSources}
-            onRefreshState={refreshState}
-          />
-        )}
-
-        {currentTab === 'knowledge-base' && (
-          <KnowledgeBaseView
-            records={state.knowledgeBase}
-            onRefreshState={refreshState}
-          />
-        )}
-
-        {currentTab === 'learning' && (
-          <ContinuousLearningView
-            modelVersions={state.modelVersions}
-            onRefreshState={refreshState}
-          />
-        )}
-
-        {currentTab === 'audit-logs' && (
-          <AuditLogsView auditLogs={state.auditLogs} />
-        )}
+      {/* 2. Main Operational View Area */}
+      <main className="flex-1 overflow-x-hidden pb-12">
+        <CommandCenterView
+          key={`cmd-center-${resetCount}-${currentTab}`}
+          habitations={state.habitations}
+          shelters={state.shelters}
+          teams={state.teams}
+          riskZones={state.riskZones}
+          routeSegments={state.routeSegments}
+          routes={state.routes}
+          priorities={state.priorities}
+          alerts={state.alerts}
+          ragAdvisory={state.ragAdvisory}
+          initialWorkflowStage={initialWorkflowStage}
+          onSelectHabitation={() => {}}
+          onSelectShelter={() => setCurrentTab('centres')}
+          onTriggerEvacuation={handleTriggerEvacuation}
+          onRequestAIExplanation={(id) => setAiExplanationHabId(id)}
+          onNavigateTab={(tab) => setCurrentTab(tab)}
+          onRefreshState={refreshState}
+          onOpenRagKnowledgeModal={() => setIsRagModalOpen(true)}
+        />
       </main>
 
-      {/* 4. End-to-End Disaster Scenario Simulation Modal */}
+      {/* Admin Knowledge Sources & AI Prediction Modal */}
+      <AdminKnowledgeSourcesModal
+        isOpen={isRagModalOpen}
+        onClose={() => setIsRagModalOpen(false)}
+        onForecastUpdated={() => refreshState()}
+      />
+
+      {/* Disaster Scenario Simulation Modal */}
       <DisasterSimulationModal
         isOpen={isSimulating}
         onClose={() => setIsSimulating(false)}
         onRefreshState={refreshState}
         onJumpToTab={(tab) => {
           setCurrentTab(tab);
-          const foundIdx = PIPELINE_STEPS.findIndex(s => s.tabKey === tab);
-          if (foundIdx !== -1) setCurrentStepIndex(foundIdx);
         }}
       />
 
-      {/* 5. AI Decision Explanation Modal */}
+      {/* AI Decision Explanation Modal */}
       <AIExplanationModal
         isOpen={Boolean(aiExplanationHabId)}
         onClose={() => setAiExplanationHabId(null)}
